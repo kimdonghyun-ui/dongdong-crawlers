@@ -12,8 +12,7 @@ async def crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pa
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            channel="chrome",   # ✅ chrome 채널 강제
-            headless=True,
+            headless=True,  # 서버에서는 headless=True 권장
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -22,6 +21,7 @@ async def crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pa
         )
         page = await browser.new_page()
 
+        # UA 고정
         await page.set_extra_http_headers({
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -71,6 +71,7 @@ async def crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pa
 
                 print(f"   - {title} | {price}원 | {href}")
 
+                # ✅ 필터링
                 if include and not any(w.lower() in title.lower() for w in include):
                     continue
                 if exclude and any(w in title for w in exclude):
@@ -78,6 +79,7 @@ async def crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pa
                 if not (min_price <= price <= max_price):
                     continue
 
+                # ✅ 최저가 비교
                 if lowest_price is None or price < lowest_price:
                     lowest_price = price
                     lowest_items = [{
