@@ -12,16 +12,16 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,  # 서버 배포 시 headless=True 권장
+            channel="chrome",   # ✅ chromium 대신 chrome 채널 강제
+            headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
+                "--no-sandbox",                # ✅ root 환경 실행 시 필수
+                "--disable-dev-shm-usage",     # ✅ 공유메모리 부족 문제 방지
             ],
         )
         page = await browser.new_page()
 
-        # UA 고정
         await page.set_extra_http_headers({
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -68,18 +68,14 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
 
                 print(f"   - {title} | {price}원 | {href}")
 
-                # ✅ 필터링
                 if include and not any(w.lower() in title.lower() for w in include):
                     continue
                 if exclude and any(w in title for w in exclude):
                     continue
-
-                # ✅ 가격 범위 필터 (강제 적용)
                 if price < min_price or price > max_price:
                     print(f"   🚫 가격 범위 제외: {price}")
                     continue
 
-                # ✅ 최저가 비교
                 if lowest_price is None or price < lowest_price:
                     lowest_price = price
                     lowest_items = [{
@@ -100,7 +96,6 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
                         "site": "gmarket",
                     })
 
-            # 🔥 여기서 바로 break 하지 않고 끝까지 탐색
             if max_pages and page_num >= max_pages:
                 break
 
@@ -109,7 +104,7 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
                 break
             page_num += 1
 
-            await asyncio.sleep(2)  # 서버 부담 줄이기
+            await asyncio.sleep(2)
 
         await browser.close()
         return lowest_items
