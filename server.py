@@ -1,7 +1,7 @@
 # server.py
 from fastapi import FastAPI, Request
 from crawlers.gmarket import crawl_gmarket
-from crawlers.elevenst import crawl_elevenst
+from crawlers.elevenst import crawl_elevenst   # ✅ 11번가 추가
 import uvicorn
 
 app = FastAPI()
@@ -21,11 +21,12 @@ async def crawl(request: Request):
     min_price = int(body.get("minPrice") or body.get("min_price") or 0)
     max_price = int(body.get("maxPrice") or body.get("max_price") or 999999999)
 
-    # ✅ 1페이지만 확인 (타임아웃 방지용)
+
+
     if site == "gmarket":
-        result = await crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pages=1)
+        result = await crawl_gmarket(keyword, include, exclude, min_price, max_price)
     elif site == "11st":
-        result = await crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pages=1)
+        result = await crawl_elevenst(keyword, include, exclude, min_price, max_price)  # ✅ 추가
     else:
         result = {"error": f"지원하지 않는 사이트: {site}"}
 

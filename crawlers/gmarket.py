@@ -3,7 +3,8 @@ from playwright.async_api import async_playwright
 import asyncio
 from datetime import datetime
 
-async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pages=1):
+
+async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pages=None):
     BASE_URL = "https://www.gmarket.co.kr/n/search?keyword={keyword}&p={page}&s=1"
 
     lowest_items = []
@@ -33,15 +34,20 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
 
-        while page_num <= max_pages:
+        while True:
             url = BASE_URL.format(keyword=keyword, page=page_num)
             print(f"\n▶ {page_num} 페이지 확인 중: {url}")
 
             try:
-                await page.goto(url, timeout=30000)  # 30초 제한
-                await page.wait_for_selector("div.box__component", timeout=10000)
+                await page.goto(url, timeout=60000)  # ⬅️ timeout 60초
             except Exception as e:
-                print(f"🚨 페이지 로드 실패: {e}")
+                print(f"🚨 page.goto 실패: {e}")
+                break
+
+            try:
+                await page.wait_for_selector("div.box__component", timeout=20000)
+            except:
+                print("🚨 상품 리스트 로딩 실패, 다음 페이지 없음")
                 break
 
             items = await page.query_selector_all("div.box__component")
@@ -65,12 +71,16 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
                 except ValueError:
                     continue
 
+                print(f"   - {title} | {price}원 | {href}")
+
                 # ✅ 필터링
                 if include and not any(w.lower() in title.lower() for w in include):
                     continue
                 if exclude and any(w in title for w in exclude):
                     continue
+
                 if price < min_price or price > max_price:
+                    print(f"   🚫 가격 범위 제외: {price}")
                     continue
 
                 # ✅ 최저가 비교
@@ -94,8 +104,15 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
                         "site": "gmarket",
                     })
 
+            if max_pages and page_num >= max_pages:
+                break
+
+            next_btn = await page.query_selector("a.link__page-next")
+            if not next_btn:
+                break
             page_num += 1
-            await asyncio.sleep(1)
+
+            await asyncio.sleep(2)
 
         await browser.close()
         return lowest_items
