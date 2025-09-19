@@ -1,6 +1,5 @@
 # server.py
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from crawlers.gmarket import crawl_gmarket
 from crawlers.elevenst import crawl_elevenst
 import uvicorn
@@ -13,31 +12,24 @@ async def root():
 
 @app.post("/crawl")
 async def crawl(request: Request):
-    try:
-        body = await request.json()
+    body = await request.json()
 
-        site = body.get("site", "gmarket")
-        keyword = body.get("keyword")
-        include = body.get("include", [])
-        exclude = body.get("exclude", [])
-        min_price = int(body.get("minPrice") or body.get("min_price") or 0)
-        max_price = int(body.get("maxPrice") or body.get("max_price") or 999999999)
+    site = body.get("site", "gmarket")
+    keyword = body.get("keyword")
+    include = body.get("include", [])
+    exclude = body.get("exclude", [])
+    min_price = int(body.get("minPrice") or body.get("min_price") or 0)
+    max_price = int(body.get("maxPrice") or body.get("max_price") or 999999999)
 
-        if site == "gmarket":
-            result = await crawl_gmarket(keyword, include, exclude, min_price, max_price)
-        elif site == "11st":
-            result = await crawl_elevenst(keyword, include, exclude, min_price, max_price)
-        else:
-            return JSONResponse(
-                content={"success": False, "error": f"지원하지 않는 사이트: {site}"},
-                status_code=400
-            )
+    # ✅ 1페이지만 확인 (타임아웃 방지용)
+    if site == "gmarket":
+        result = await crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pages=1)
+    elif site == "11st":
+        result = await crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pages=1)
+    else:
+        result = {"error": f"지원하지 않는 사이트: {site}"}
 
-        return JSONResponse(content={"success": True, "result": result})
-
-    except Exception as e:
-        # 🚨 예외 발생 시 무조건 JSON 반환 (HTML 방지)
-        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+    return {"success": bool(result), "result": result}
 
 
 if __name__ == "__main__":
