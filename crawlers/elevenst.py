@@ -51,8 +51,70 @@ async def crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pa
             items = await page.query_selector_all("li.c-search-list__item")
             print(f"상품 개수: {len(items)}")
 
-            # (나머지 로직 동일)
-            ...
-        
+            for item in items:
+                title_tag = await item.query_selector("div.c-card-item__name dd")
+                price_tag = await item.query_selector("dd.c-card-item__price .value")
+                link_tag = await item.query_selector("a.c-card-item__anchor")
+
+                if not title_tag or not price_tag or not link_tag:
+                    continue
+
+                title = (await title_tag.inner_text()).strip()
+                price_text = (await price_tag.inner_text()).strip().replace(",", "")
+                href_raw = await link_tag.get_attribute("href")
+                if not href_raw:
+                    continue
+                goodscode = href_raw.split("/")[-1].split("?")[0]
+                href = f"https://www.11st.co.kr/products/{goodscode}"
+
+                try:
+                    price = int(price_text)
+                except ValueError:
+                    continue
+
+                print(f"   - {title} | {price}원 | {href}")
+
+                # ✅ 필터링
+                if include and not any(w.lower() in title.lower() for w in include):
+                    continue
+                if exclude and any(w in title for w in exclude):
+                    continue
+                if not (min_price <= price <= max_price):
+                    continue
+
+                # ✅ 최저가 비교
+                if lowest_price is None or price < lowest_price:
+                    lowest_price = price
+                    lowest_items = [{
+                        "title": title,
+                        "price": price,
+                        "url": href,
+                        "code": goodscode,
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "site": "11st",
+                    }]
+                elif price == lowest_price:
+                    lowest_items.append({
+                        "title": title,
+                        "price": price,
+                        "url": href,
+                        "code": goodscode,
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "site": "11st",
+                    })
+
+            if lowest_items:
+                break
+
+            if max_pages and page_num >= max_pages:
+                break
+
+            next_btn = await page.query_selector("li.last button")
+            if not next_btn:
+                break
+            page_num += 1
+
+            await asyncio.sleep(3)
+
         await browser.close()
         return lowest_items
