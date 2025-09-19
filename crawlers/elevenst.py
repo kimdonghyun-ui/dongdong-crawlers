@@ -1,117 +1,62 @@
-# crawlers/elevenst.py
-from playwright.async_api import async_playwright
 import asyncio
-from datetime import datetime
+from playwright.async_api import async_playwright
 
-async def crawl_elevenst(keyword, include, exclude, min_price, max_price, max_pages=None):
-    BASE_URL = "https://search.11st.co.kr/pc/total-search?kwd={keyword}&tabId=TOTAL_SEARCH&sortCd=L&pageNo={page}"
-
-    lowest_items = []
-    lowest_price = None
-    page_num = 1
+async def crawl_elevenst(keyword: str, include: str = "", exclude: str = "", min_price: int = 0, max_price: int = 999999999):
+    results = []
+    url = f"https://search.11st.co.kr/Search.tmall?kwd={keyword}"
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,  # 서버에서는 headless=True 권장
+            headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
+                "--disable-setuid-sandbox",
+                "--single-process",
+                "--disable-gpu",
             ],
         )
-        page = await browser.new_page()
-
-        # UA 고정
-        await page.set_extra_http_headers({
-            "User-Agent": (
+        context = await browser.new_context(
+            user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/119.0.0.0 Safari/537.36"
             ),
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
-        })
-        await page.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            locale="ko-KR",
         )
+        page = await context.new_page()
 
-        while True:
-            url = BASE_URL.format(keyword=keyword, page=page_num)
-            print(f"\n▶ {page_num} 페이지 확인 중: {url}")
+        print(f"▶ 11번가 크롤링 시작: {url}")
+        await page.goto(url, timeout=60000, wait_until="domcontentloaded")
 
-            await page.goto(url)
+        items = await page.query_selector_all("div.c_card")
 
+        print(f"상품 개수: {len(items)}")
+        for item in items:
             try:
-                await page.wait_for_selector("li.c-search-list__item", timeout=10000)
-            except:
-                break
+                title = await item.query_selector_eval("a.c_card_subject", "el => el.textContent") if await item.query_selector("a.c_card_subject") else ""
+                link = await item.query_selector_eval("a.c_card_subject", "el => el.href") if await item.query_selector("a.c_card_subject") else ""
+                price = await item.query_selector_eval("span.value", "el => el.textContent") if await item.query_selector("span.value") else "0"
 
-            items = await page.query_selector_all("li.c-search-list__item")
-            print(f"상품 개수: {len(items)}")
-
-            for item in items:
-                title_tag = await item.query_selector("div.c-card-item__name dd")
-                price_tag = await item.query_selector("dd.c-card-item__price .value")
-                link_tag = await item.query_selector("a.c-card-item__anchor")
-
-                if not title_tag or not price_tag or not link_tag:
+                if not title or not price:
                     continue
 
-                title = (await title_tag.inner_text()).strip()
-                price_text = (await price_tag.inner_text()).strip().replace(",", "")
-                href_raw = await link_tag.get_attribute("href")
-                if not href_raw:
-                    continue
-                goodscode = href_raw.split("/")[-1].split("?")[0]
-                href = f"https://www.11st.co.kr/products/{goodscode}"
+                price = int(price.replace(",", "").replace("원", "").strip())
 
-                try:
-                    price = int(price_text)
-                except ValueError:
+                if include and include not in title:
+                    continue
+                if exclude and exclude in title:
+                    continue
+                if price < min_price or price > max_price:
                     continue
 
-                print(f"   - {title} | {price}원 | {href}")
+                results.append({"title": title.strip(), "price": price, "link": link.strip()})
+                print(f"   - {title.strip()} | {price}원 | {link.strip()}")
 
-                # ✅ 필터링
-                if include and not any(w.lower() in title.lower() for w in include):
-                    continue
-                if exclude and any(w in title for w in exclude):
-                    continue
-                if not (min_price <= price <= max_price):
-                    continue
-
-                # ✅ 최저가 비교
-                if lowest_price is None or price < lowest_price:
-                    lowest_price = price
-                    lowest_items = [{
-                        "title": title,
-                        "price": price,
-                        "url": href,
-                        "code": goodscode,
-                        "date": datetime.now().strftime("%Y-%m-%d"),
-                        "site": "11st",
-                    }]
-                elif price == lowest_price:
-                    lowest_items.append({
-                        "title": title,
-                        "price": price,
-                        "url": href,
-                        "code": goodscode,
-                        "date": datetime.now().strftime("%Y-%m-%d"),
-                        "site": "11st",
-                    })
-
-            if lowest_items:
-                break
-
-            if max_pages and page_num >= max_pages:
-                break
-
-            next_btn = await page.query_selector("li.last button")
-            if not next_btn:
-                break
-            page_num += 1
-
-            await asyncio.sleep(3)
+            except Exception as e:
+                print(f"❌ 상품 파싱 실패: {e}")
 
         await browser.close()
-        return lowest_items
+
+    return results
