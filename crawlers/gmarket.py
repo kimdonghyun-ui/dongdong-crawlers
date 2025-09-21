@@ -1,8 +1,6 @@
-# crawlers/gmarket.py
 from playwright.async_api import async_playwright
 import asyncio
 from datetime import datetime
-
 
 async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pages=None):
     BASE_URL = "https://www.gmarket.co.kr/n/search?keyword={keyword}&p={page}&s=1"
@@ -13,7 +11,7 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
+            headless=False,  # 서버 배포 시 headless=True 권장
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -22,6 +20,7 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
         )
         page = await browser.new_page()
 
+        # UA 고정
         await page.set_extra_http_headers({
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -39,18 +38,18 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
             print(f"\n▶ {page_num} 페이지 확인 중: {url}")
 
             try:
-                await page.goto(url, timeout=60000)  # ⬅️ timeout 60초
+                await page.goto(url, timeout=30000)
             except Exception as e:
-                print(f"🚨 page.goto 실패: {e}")
+                print(f"⚠️ 페이지 로딩 실패: {e}")
                 break
 
             try:
-                await page.wait_for_selector("div.box__component", timeout=20000)
+                await page.wait_for_selector("div.box__component, div.box__component-item", timeout=20000)
             except:
-                print("🚨 상품 리스트 로딩 실패, 다음 페이지 없음")
+                print("⚠️ 상품 리스트 로딩 실패")
                 break
 
-            items = await page.query_selector_all("div.box__component")
+            items = await page.query_selector_all("div.box__component, div.box__component-item")
             print(f"상품 개수: {len(items)}")
 
             for item in items:
@@ -79,6 +78,7 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
                 if exclude and any(w in title for w in exclude):
                     continue
 
+                # ✅ 가격 범위 필터
                 if price < min_price or price > max_price:
                     print(f"   🚫 가격 범위 제외: {price}")
                     continue
@@ -104,15 +104,26 @@ async def crawl_gmarket(keyword, include, exclude, min_price, max_price, max_pag
                         "site": "gmarket",
                     })
 
+            # 🔥 페이지 제한
             if max_pages and page_num >= max_pages:
                 break
 
+            # ✅ 다음 페이지 버튼
             next_btn = await page.query_selector("a.link__page-next")
             if not next_btn:
+                print("⚠️ 다음 페이지 버튼 없음. 종료")
                 break
-            page_num += 1
 
-            await asyncio.sleep(2)
+            try:
+                await next_btn.click()
+                await page.wait_for_selector("div.box__component, div.box__component-item", timeout=20000)
+                print(f"➡️ 다음 페이지 이동 성공: {page_num+1} 페이지")
+            except Exception as e:
+                print(f"⚠️ 페이지 이동 실패: {e}")
+                break
+
+            page_num += 1
+            await asyncio.sleep(2)  # 서버 부담 줄이기
 
         await browser.close()
         return lowest_items
